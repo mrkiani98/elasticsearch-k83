@@ -1,0 +1,108 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ .Values.clusterName }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: elasticsearch
+spec:
+  serviceName: elasticsearch
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      app: elasticsearch-node
+  template:
+    metadata:
+      # this annotation is for restarting the statefulset in case of any changes on the related configmap's items
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+      labels:
+        app: elasticsearch-node
+    spec:
+      containers:
+      - name: elasticsearch
+        image: "{{ .Values.image }}:{{ .Values.imageTag }}"
+        imagePullPolicy: "{{ .Values.imagePullPolicy }}"
+        ports:
+        - containerPort: 9200
+          name: client-node
+          protocol: TCP
+        - containerPort: 9300
+          name: inter-node
+          protocol: TCP
+        volumeMounts:
+        - name: data
+          mountPath: /usr/share/elasticsearch/data
+        # In scenarios when we change configmap or the statefulset itself, here we can use readinessProbe to first make sure that the restarted node comes up and becomes healthy to make sure we have at least 2 healthy nodes in our cluster
+        # There would be a delay roughly about 2 minutes in the first initialization of the cluster
+        startupProbe:
+          httpGet:
+            path: /
+            port: client-node
+          failureThreshold: 40
+          periodSeconds: 10
+        env:
+          - name: cluster.name
+            valueFrom:
+              configMapKeyRef:
+                name: elk-cluster-settings
+                key: cluster.name
+          - name: discovery.seed_hosts
+            valueFrom:
+              configMapKeyRef:
+                name: elk-cluster-settings
+                key: discovery.seed_hosts
+          - name: cluster.initial_master_nodes
+            valueFrom:
+              configMapKeyRef:
+                name: elk-cluster-settings
+                key: cluster.initial_master_nodes
+          # !!! Here the xpack security is set to false, otherwise we need to setup TLS handshake avaiable between all of the nodes in the cluster
+          - name: xpack.security.enabled
+            valueFrom:
+              configMapKeyRef:
+                name: elk-cluster-settings
+                key: xpack.security.enabled
+          - name: ES_JAVA_OPTS
+            valueFrom:
+              configMapKeyRef:
+                name: elk-cluster-settings
+                key: ES_JAVA_OPTS
+          - name: node.name
+            valueFrom:
+              fieldRef:
+                fieldPath: metadata.name
+      initContainers:
+      # !!! NOTE: privileged init container
+      - name: grant-permissions
+        image: busybox
+        command: ["sh", "-c", "chown -R 1000:1000 /usr/share/elasticsearch/data"]
+        securityContext:
+          privileged: true
+        volumeMounts:
+        - name: data
+          mountPath: /usr/share/elasticsearch/data
+      # !!! NOTE: privileged init container
+      - name: adjust-vm-max-map
+        image: busybox
+        command: ["sysctl", "-w", "vm.max_map_count=262144"]
+        securityContext:
+          privileged: true
+      # !!! NOTE: privileged init container
+      - name: adjust-fd-ulimit
+        image: busybox
+        command: ["sh", "-c", "ulimit -n 65536"]
+        securityContext:
+          privileged: true
+  # By this claim template, the new pvc would not be deleted after decreasing the number of pods in the statefulset and it should be deleted manually by finding the last index number for the pvc for the pod which is deleted last time ( Only when decreasing the number of pods)
+  volumeClaimTemplates:
+  - metadata:
+      name: data
+      labels:
+        app: elasticsearch-vpc
+    spec:
+      accessModes: [ "ReadWriteOnce" ]
+      storageClassName: "{{ .Values.persistentStorageClassName }}"
+      resources:
+        requests:
+          storage: "{{ .Values.persistentVolumeDataSize }}"

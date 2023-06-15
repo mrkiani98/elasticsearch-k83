@@ -1,0 +1,37 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: es-exporter
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: es-exporter
+spec:
+  replicas: {{ .Values.es_exporterReplicaCount }}
+  selector:
+    matchLabels:
+      app: es-exporter
+  template:
+    metadata:
+      labels:
+        app: es-exporter
+    spec:
+      containers:
+      - name: es-exporter
+        image: "{{ .Values.es_exporterImage }}:{{ .Values.es_exporterImageTag }}"
+        args: ["--es.uri=http://elasticsearch:9200"]
+        ports:
+        - containerPort: 9114
+---
+kind: Service
+apiVersion: v1
+metadata:
+  name: es-exporter
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: es-exporter
+spec:
+  selector:
+    app: es-exporter
+  ports:
+    - port: 9114
+      name: es-exporter

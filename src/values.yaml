@@ -1,0 +1,28 @@
+# Default values for elk-cluster.
+# This is a YAML-formatted file.
+# Declare variables to be passed into your templates.
+clusterName: "elk-cluster"
+es_java_opts: "-Xms512m -Xmx512m"
+
+# The minimum number of replicas can be 3 (to have minimum 3 master eligible nodes)
+replicaCount: 3
+
+# elasticsearch image version
+image: "docker.elastic.co/elasticsearch/elasticsearch"
+imageTag: "8.8.0"
+imagePullPolicy: "IfNotPresent"
+
+# elasticsearch persistent volume settings
+persistentVolumeDataSize: "1Gi"
+# AWS EKS default EBS storage class name is gp2
+persistentStorageClassName: "gp2"
+
+### kibana values
+kibanaImage: "docker.elastic.co/kibana/kibana"
+kibanaImageTag: "8.8.0"
+kibanaReplicaCount: "1"
+
+### s-exporter values
+es_exporterImage: "bitnami/elasticsearch-exporter"
+es_exporterImageTag: "latest"
+es_exporterReplicaCount: "1"

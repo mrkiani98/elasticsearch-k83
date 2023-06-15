@@ -1,0 +1,38 @@
+---
+eck-elasticsearch:
+  enabled: true
+  annotations:
+      eck.k8s.elastic.co/license: basic
+  nodeSets:
+  - name: node
+    count: 3
+    podTemplate:
+      spec:
+        initContainers:
+        - name: sysctl
+          securityContext:
+            privileged: true
+            runAsUser: 0
+          command: ['sh', '-c', 'sysctl -w vm.max_map_count=262144']
+        containers:
+        - name: elasticsearch
+          resources:
+            limits:
+              memory: 2Gi
+              cpu: 2
+    volumeClaimTemplates:
+    - metadata:
+        name: elasticsearch-data
+      spec:
+        accessModes:
+        - ReadWriteOnce
+        resources:
+          requests:
+            storage: 2Gi
+        storageClassName: gp2
+
+---
+eck-kibana:
+  enabled: true
+  annotations:
+      eck.k8s.elastic.co/license: basic
