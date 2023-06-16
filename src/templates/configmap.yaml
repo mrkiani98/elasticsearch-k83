@@ -12,3 +12,5 @@ data:
   cluster.initial_master_nodes: "elk-cluster-0,elk-cluster-1,elk-cluster-2"
   # !!! Here the xpack security is set to false, otherwise we need to setup TLS connection between all of the nodes in the cluster
   xpack.security.enabled: "false"
+  # the following env is not elasticsearch related parameter and it's only for redeploying the pods (by following rolling update method) after we resize the volume. It triggers helm chart to redeploy the sts.
+  data.volume.size: {{ .Values.persistentVolumeDataSize }}

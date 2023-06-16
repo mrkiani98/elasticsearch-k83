@@ -34,7 +34,7 @@ spec:
         - name: data
           mountPath: /usr/share/elasticsearch/data
         # In scenarios when we change configmap or the statefulset itself, here we can use readinessProbe to first make sure that the restarted node comes up and becomes healthy to make sure we have at least 2 healthy nodes in our cluster
-        # There would be a delay roughly about 2 minutes in the first initialization of the cluster
+        # There would be a delay of roughly about 2 minutes in the first initialization of the cluster
         startupProbe:
           httpGet:
             path: /
@@ -95,8 +95,10 @@ spec:
         securityContext:
           privileged: true
   # By this claim template, the new pvc would not be deleted after decreasing the number of pods in the statefulset and it should be deleted manually by finding the last index number for the pvc for the pod which is deleted last time ( Only when decreasing the number of pods)
+  # !!! NOTE(issue): The persistent volume cannot be resized for more than one time by patching the VPC manifest
   volumeClaimTemplates:
   - metadata:
+      # do not change following item, otherwise when you want to resize the persistent volume claim, modify the script (README.md section resizing volume) and put the related name in the for loop for the filtering the name of pvc
       name: data
       labels:
         app: elasticsearch-vpc

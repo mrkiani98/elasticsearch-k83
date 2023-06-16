@@ -8,9 +8,10 @@
     - [Installing the cluster](#installing-the-cluster)
     - [Checking the status of installation process](#checking-the-status-of-installation-process)
     - [Checking the status of elasticsearch cluster](#checking-the-status-of-elasticsearch-cluster)
-  - [Configuration](#configuration)
+  - [Additional Configuration](#additional-configuration)
     - [Adding or removing a node in the cluster](#adding-or-removing-a-node-in-the-cluster)
     - [Changing java-related configuration](#changing-java-related-configuration)
+    - [Resizing the persistent volume](#resizing-the-persistent-volume)
   - [Upgrading](#upgrading)
   - [Next steps](#next-steps)
 - [ECK operator solution](#eck-operator-solution)
@@ -19,12 +20,12 @@ This solution contains installing the elasticsearch cluster by using the helm ch
 ## Solution Explanation
 
 * Making cluster nodes persistent by using StatefulSet object in kubernetes:
-    * Each of the nodes on the cluster should have a unique identity and should not be identical and also they should not be interchanged.
+    * Each of the nodes on the cluster must have a unique identity and should not be identical and also they should not be interchanged.
     * Pods should retain their identities when deployed on a new host
     * By using a persistent volume claim template, each pod can get a unique PVC and volume (As we know, on Deployments in kubernetes, all replicas share the same VPC and volume)
 * Enable data storage volume resiliency by using AWS EBS volumes as the storage provider for the StatefulSet
     * It's not a good idea to use hostpath-based persistent volumes because of the fact that, the pods should be only deployed on one host. And so we need a storage provider and as the current environment is AWS EKS, we can use the default storage class which is based on EBS volumes (gp2).
-* Using headless service for service discovery inside the cluster to initilaize and also automatically adding and removing nodes:
+* Using headless service for service discovery inside the cluster to initialize and also automatically adding and removing nodes:
     * I set up elasticsearch cluster in bare metal environments and I already know that we should connect all of the nodes in the cluster and all of them should know each other. Headless service in kubernetes, can return the list of all the related pods and then the component which was calling the headless service endpoint would decide what to do with the returned list of pods and ips. 
     * I've got the idea of using headless service for elasticseach cluster by reading the following [article](https://faun.pub/https-medium-com-thakur-vaibhav23-ha-es-k8s-7e655c1b7b61) (I just used the idea related to the service discovery from this article).
 * Enabled zero-downtime deployment by using a startup probe for the pods. The startup probe would check the base URL of each node's endpoint to check if it's running or not (It would take a little bit for every node to join or rejoin the cluster in case of a new change in the cluster)
@@ -55,10 +56,10 @@ kubectl -n elk-cluster get pods --watch
 ```bash
 kubectl -n elk-cluster port-forward elk-cluster-0 9200:9200
 # on a new terminal
-curl -i localhost:9202/_cluster/health?pretty
+curl -i localhost:9200/_cluster/health?pretty
 ```
 
-## Configuration
+## Additional Configuration
 ### Adding or removing a node in the cluster
 > **WARNING** minimum number of replicas in the cluster can be set to 3
 
@@ -73,19 +74,46 @@ By this chart, you can simply set the java heap size memory configuration by cha
 helm upgrade elk-cluster src/ --install -f src/values.yaml --namespace elk-cluster --create-namespace
 ```
 
+### Resizing the persistent volume
+* First we should make sure our storage provider supports volume size expansion.
+* Then we should check if the feature of volume expanding is enabled or not by checking the value of "ALLOWVOLUMEEXPANSION" from: ```kubectl get storageclass```
+* If expanding volume feature is not enabled, you can enable "ALLOWVOLUMEEXPANSION" by using the following command:
+```bash
+kubectl patch sc gp2 -p '{"allowVolumeExpansion": true}'
+```
+* Then we should patch the PVC directly by kubectl command (We cannot change it from helm chart because we cannot patch persistent volume in statefulset object):
+```bash
+# put the new size by following the example below
+newSize=4Gi
+# maybe you need to change the namespace if you install the cluster by changing the namespace name
+for i in `kubectl get pvc -n elk-cluster -oname | grep data-elk-cluster` ; do kubectl -n elk-cluster patch -p '{"spec": {"resources": {"requests": {"storage": "'$newSize'"}}}}' $i ; done
+```
+* The PVC and also the size of the volume inside the pods would be resized dynamically
+* Now we should change the value of persistent volume claim in the helm chart. To do so, first we need to delete the whole statefulset except the pods:
+```bash
+# --cascade=orphan keeps pods running
+kubectl delete sts elk-cluster --cascade=orphan -n elk-cluster
+```
+
+* Then we should change the value of "persistentVolumeDataSize" in the src/values.yaml
+* And finally we should install the statefulset again:
+```bash
+helm upgrade elk-cluster src/ --install -f src/values.yaml --namespace elk-cluster --create-namespace
+```
 ## Upgrading
 Upgrading the version of elasticsearch can be simply done by changing the value of "imageTag" in the file src/values.yaml.
-> **WARNING** Make sure to read the supported version for the upgrade and for sure take a backup of the cluster data before upgrading
+> **WARNING** Make sure to read the supported versions for the upgrade and for sure take a backup of the cluster data before upgrading
 
 ## Next steps
 * Enable xpack security on the cluster. This feature also requires to setup TLS connectivity between all of the nodes.
 * Set up automatic backup and restore of the cluster data
+* To fix resizing the persistent volume (EBS storageclass) for more than one time. For the first time, the persistent volume can be resized dynamically but the second time it didn't change.
 
 
 ## ECK operator solution
-> See ECK operator solution documentation here [ECK -solution.md]
+> See ECK operator solution documentation here [ECK-solution.md]
 
 
-[ECK -solution.md]: ./ECK-solution.md
+[ECK-solution.md]: ./ECK-solution.md
 
 
